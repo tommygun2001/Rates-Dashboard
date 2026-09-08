@@ -310,27 +310,7 @@ function refreshCurrentTool() {
 function refreshAll() {
   const btn = document.querySelector('.refresh-btn');
   btn.classList.add('spinning');
-  let done = 0;
-  const total = Object.keys(TOOLS).length;
-
-  Object.entries(TOOLS).forEach(([key, tool]) => {
-    const iframe = bgFrames[key];
-    if (!iframe) { done++; check(); return; }
-    try {
-      const win = iframe.contentWindow;
-      if (tool.fetchFn && win[tool.fetchFn]) {
-        win[tool.fetchFn]().then(() => { extractPrices(key); done++; check(); }).catch(() => { done++; check(); });
-      } else {
-        if (win.computeAll) win.computeAll();
-        extractPrices(key);
-        done++; check();
-      }
-    } catch(e) { done++; check(); }
-  });
-
-  function check() {
-    if (done >= total) btn.classList.remove('spinning');
-  }
+  fetchAllRates().then(() => btn.classList.remove('spinning'));
 }
 
 function updateRefreshTime() {
@@ -339,9 +319,105 @@ function updateRefreshTime() {
     `${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}:${n.getSeconds().toString().padStart(2,'0')}`;
 }
 
+// ── LIVE RATE FETCHING ───────────────────────────────────────────────
+async function fetchAllRates() {
+  await Promise.allSettled([fetchESTR(), fetchSONIA(), fetchTONA(), fetchCORRA()]);
+  updateRefreshTime();
+}
+
+async function fetchESTR() {
+  const url = 'https://data.ecb.europa.eu/api/data/EST/B.EU000A2X2A25.WT?lastNObservations=1&format=jsondata';
+  const proxies = [url,
+    'https://corsproxy.io/?url=' + encodeURIComponent(url),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
+  for (const u of proxies) {
+    try {
+      const r = await fetch(u); if (!r.ok) continue;
+      const j = await r.json();
+      const obs = j.dataSets[0].series['0:0:0'].observations;
+      const keys = Object.keys(obs).sort((a,b)=>Number(a)-Number(b));
+      const val = parseFloat(obs[keys[keys.length-1]][0]);
+      const dateVals = j.structure.dimensions.observation[0].values;
+      const date = dateVals[dateVals.length-1].id;
+      if (isNaN(val)) continue;
+      document.getElementById('strip-estr').textContent = val.toFixed(3);
+      document.getElementById('card-estr-fix').textContent = val.toFixed(3);
+      document.getElementById('strip-estr-date').textContent = date;
+      return;
+    } catch(e) { continue; }
+  }
+}
+
+async function fetchSONIA() {
+  const url = 'https://api.bankofengland.co.uk/api/3.0.0/repo/series/IUDSOIA/observations/latest';
+  const proxies = [url,
+    'https://corsproxy.io/?url=' + encodeURIComponent(url),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
+  for (const u of proxies) {
+    try {
+      const r = await fetch(u); if (!r.ok) continue;
+      const j = await r.json();
+      const obs = j.observations;
+      if (!obs || !obs.length) continue;
+      const latest = obs[obs.length-1];
+      const val = parseFloat(latest.value);
+      if (isNaN(val)) continue;
+      document.getElementById('strip-sonia').textContent = val.toFixed(4);
+      document.getElementById('card-sonia-fix').textContent = val.toFixed(4);
+      document.getElementById('strip-sonia-date').textContent = latest.date;
+      return;
+    } catch(e) { continue; }
+  }
+}
+
+async function fetchTONA() {
+  const url = 'https://www.global-rates.com/en/interest-rates/tonar/';
+  const proxies = [
+    'https://corsproxy.io/?url=' + encodeURIComponent(url),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
+  for (const u of proxies) {
+    try {
+      const r = await fetch(u); if (!r.ok) continue;
+      const text = await r.text();
+      const match = text.match(/TONAR[^%]*?([\d]+\.[\d]+)\s*%/i) ||
+                    text.match(/(0\.[\d]{3})\s*%/);
+      if (!match) continue;
+      const val = parseFloat(match[1]);
+      if (isNaN(val)) continue;
+      document.getElementById('strip-tona').textContent = val.toFixed(3);
+      document.getElementById('card-tona-fix').textContent = val.toFixed(3);
+      document.getElementById('strip-tona-date').textContent = 'live';
+      return;
+    } catch(e) { continue; }
+  }
+}
+
+async function fetchCORRA() {
+  const url = 'https://www.bankofcanada.ca/valet/observations/ICRV_CORRA/json?recent=1';
+  const proxies = [url,
+    'https://corsproxy.io/?url=' + encodeURIComponent(url),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)];
+  for (const u of proxies) {
+    try {
+      const r = await fetch(u); if (!r.ok) continue;
+      const j = await r.json();
+      const obs = j.observations;
+      if (!obs || !obs.length) continue;
+      const latest = obs[obs.length-1];
+      const val = parseFloat(latest.ICRV_CORRA.v);
+      if (isNaN(val)) continue;
+      document.getElementById('strip-corra').textContent = val.toFixed(3);
+      document.getElementById('card-corra-fix').textContent = val.toFixed(3);
+      document.getElementById('strip-corra-date').textContent = latest.d;
+      return;
+    } catch(e) { continue; }
+  }
+}
+
 // ── INIT ─────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   initBackgroundFrames();
+  fetchAllRates();
 });
 </script>
 </body>
