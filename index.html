@@ -110,16 +110,19 @@ body{background:var(--bg);color:var(--text);font-family:"SF Mono","Fira Code",Co
       <div class="rate-label">ESTR &nbsp;·&nbsp; ECB</div>
       <div class="rate-val estr" id="strip-estr">—</div>
       <div class="rate-date" id="strip-estr-date">loading...</div>
+      <div class="rate-status loading" id="strip-estr-status">fetching...</div>
     </div>
     <div class="rate-item">
       <div class="rate-label">SONIA &nbsp;·&nbsp; BoE</div>
       <div class="rate-val sonia" id="strip-sonia">—</div>
       <div class="rate-date" id="strip-sonia-date">loading...</div>
+      <div class="rate-status loading" id="strip-sonia-status">fetching...</div>
     </div>
     <div class="rate-item">
       <div class="rate-label">TONA &nbsp;·&nbsp; BoJ</div>
       <div class="rate-val tona" id="strip-tona">—</div>
       <div class="rate-date" id="strip-tona-date">loading...</div>
+      <div class="rate-status loading" id="strip-tona-status">fetching...</div>
     </div>
   </div>
 
@@ -259,18 +262,22 @@ window.addEventListener('message', (e) => {
 });
 
 // ── LIVE RATE FETCH (global-rates.com via corsproxy) ────────────────
-async function fetchRate(path, decimals, stripId, cardId, dateId) {
+async function fetchRate(path, decimals, stripId, cardId, dateId, statusId) {
   const url = 'https://www.global-rates.com' + path;
   const proxies = [
     'https://corsproxy.io/?url=' + encodeURIComponent(url),
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
   ];
+  const statusEl = document.getElementById(statusId);
+  const stripEl = document.getElementById(stripId);
+  const rateItem = stripEl ? stripEl.closest('.rate-item') : null;
+  if (statusEl) { statusEl.textContent = 'fetching...'; statusEl.className = 'rate-status loading'; }
+
   for (const proxy of proxies) {
     try {
       const r = await fetch(proxy);
       if (!r.ok) continue;
       const text = await r.text();
-      // Match table rows like: | 09-04-2026 | 3.7303 % |
       const rows = [...text.matchAll(/(\d{2})-(\d{2})-(\d{4})[^|]*\|\s*([\d.]+)\s*%/g)];
       if (!rows.length) continue;
       const val = parseFloat(rows[0][4]);
@@ -279,16 +286,22 @@ async function fetchRate(path, decimals, stripId, cardId, dateId) {
       document.getElementById(stripId).textContent = val.toFixed(decimals);
       document.getElementById(cardId).textContent = val.toFixed(decimals);
       document.getElementById(dateId).textContent = date;
+      // Flash green + show status
+      if (rateItem) { rateItem.classList.remove('flash-success','flash-fail'); void rateItem.offsetWidth; rateItem.classList.add('flash-success'); }
+      if (statusEl) { statusEl.textContent = '✓ updated'; statusEl.className = 'rate-status ok'; }
       return;
     } catch(e) { continue; }
   }
+  // All failed
+  if (rateItem) { rateItem.classList.remove('flash-success','flash-fail'); void rateItem.offsetWidth; rateItem.classList.add('flash-fail'); }
+  if (statusEl) { statusEl.textContent = '✗ unavailable'; statusEl.className = 'rate-status fail'; }
 }
 
 async function fetchAllRates() {
   await Promise.allSettled([
-    fetchRate('/en/interest-rates/ester/', 3, 'strip-estr', 'card-estr-fix', 'strip-estr-date'),
-    fetchRate('/en/interest-rates/sonia/', 4, 'strip-sonia', 'card-sonia-fix', 'strip-sonia-date'),
-    fetchRate('/en/interest-rates/tonar/', 3, 'strip-tona', 'card-tona-fix', 'strip-tona-date'),
+    fetchRate('/en/interest-rates/ester/', 3, 'strip-estr', 'card-estr-fix', 'strip-estr-date', 'strip-estr-status'),
+    fetchRate('/en/interest-rates/sonia/', 4, 'strip-sonia', 'card-sonia-fix', 'strip-sonia-date', 'strip-sonia-status'),
+    fetchRate('/en/interest-rates/tonar/', 3, 'strip-tona', 'card-tona-fix', 'strip-tona-date', 'strip-tona-status'),
   ]);
   const now = new Date();
   document.getElementById('refresh-time').textContent =
